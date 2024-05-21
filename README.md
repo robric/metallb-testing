@@ -58,9 +58,9 @@ spec:
 EOF
 ```
 
-All good, service is created
+All good, service is created and working
 
-``
+```
 ubuntu@test-metalb:~$ kubectl get svc
 NAME            TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
 kubernetes      ClusterIP   10.43.0.1      <none>        443/TCP   29m
@@ -92,7 +92,34 @@ Commercial support is available at
 </html>
 ```
 
-## 
+## Now let's add a metalb LB on the main interface
+
+### Deploy metallb
+
+We'll use info from https://metallb.universe.tf/installation/
+We also choose the k8s/FRR version because we're a bunch of network nerds.
+``` 
+kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.14.5/config/manifests/metallb-frr-k8s.yaml
+```
+
+```
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  annotations:
+    metallb.universe.tf/address-pool: default
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
+  loadBalancerIP: 10.65.94.154
+```
 
 
 
