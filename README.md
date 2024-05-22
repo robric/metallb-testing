@@ -247,32 +247,54 @@ Install lksctp-tools in *BOTH* VM and host. This will install kernel modules too
 ```
 sudo apt install lksctp-tools -y && sudo apt install telnet -y
 ```
-Start server from VM and test SCTP.
+Start server from VM and client from host to test SCTP. This is all good !
+
 ```console
-ubuntu@test-metalbv2:~$ sctp_test -H 10.65.94.106 -P 4444 -l
+###
+###  FROM CLUSTER VM (SCTP server) 
+###
+sctp_test -H 10.65.94.106 -P 4444 -l
 local:addr=10.65.94.106, port=4444, family=2
-seed = 1716370976
+seed = 1716387076
 
 Starting tests...
         socket(SOCK_SEQPACKET, IPPROTO_SCTP)  ->  sk=3
         bind(sk=3, [a:10.65.94.106,p:4444])  --  attempt 1/10
         listen(sk=3,backlog=100)
 Server: Receiving packets.
-        recvmsg(sk=3) Notification: SCTP_ASSOC_CHANGE(COMMUNICATION_UP)
+        recvmsg(sk=3) 
+
+
+Notification: SCTP_ASSOC_CHANGE(COMMUNICATION_UP)
                 (assoc_change: state=0, error=0, instr=10 outstr=10)
-        recvmsg(sk=3) Data 2 bytes. First 2 bytes: .
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+          SNDRCV(stream=0 ssn=0 tsn=3475653941 flags=0x1 ppid=245971694
+cumtsn=3475653941
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+          SNDRCV(stream=0 ssn=0 tsn=3475653942 flags=0x1 ppid=1287711845
+cumtsn=3475653942
+[...]
 
-        recvmsg(sk=3) Data 2 bytes. First 2 bytes: .
+###
+###  FROM HOST (SCTP client) 
+###
+root@fiveg-host-24-node4:~# sctp_test -H 10.65.94.1 -h  10.65.94.106 -p 4444 -s
+remote:addr=10.65.94.106, port=4444, family=2
+local:addr=10.65.94.1, port=0, family=2
+seed = 1716387104
 
-          SNDRCV(stream=0 ssn=1 tsn=2145695259 flags=0x0 ppid=0
-cumtsn=0
-        recvmsg(sk=3) Data 2 bytes. First 2 bytes: .
-```
-``` I
-root@fiveg-host-24-node4:~# withsctp telnet  10.65.94.106 4444
-Trying 10.65.94.106...
-Connected to 10.65.94.106.
-Escape character is '^]'.
+Starting tests...
+        socket(SOCK_SEQPACKET, IPPROTO_SCTP)  ->  sk=3
+        bind(sk=3, [a:10.65.94.1,p:0])  --  attempt 1/10
+Client: Sending packets.(1/10)
+        sendmsg(sk=3, assoc=0)    1 bytes.
+          SNDRCV(stream=0 flags=0x1 ppid=1578982530
+        sendmsg(sk=3, assoc=0)    1 bytes.
+          SNDRCV(stream=0 flags=0x1 ppid=245971694
+        sendmsg(sk=3, assoc=0)    1 bytes.
+          SNDRCV(stream=0 flags=0x1 ppid=1287711845
+[...]
 ```
 
 ### test with  sctp server deployment and metallb loadbalancer
@@ -348,17 +370,12 @@ spec:
   type: LoadBalancer
   loadBalancerIP: 10.65.94.101
 ```
-
-This just worked !
+Start server from VM and client from host to test SCTP via the metallb Loadbalancer. This just worked !
 
 ```console
-###
-### FROM HOST (client):
-###
-root@fiveg-host-24-node4:~# sctp_test -H 10.65.94.1 -h  10.65.94.101 -p 9999 -s
 
 ###
-### FROM Cluster VM:
+### FROM Cluster VM (server)
 ###
 ubuntu@test-metalbv2:~$ kubectl logs      sctp-server-84f9bffb47-hfln5    -f
 [....]
@@ -384,11 +401,81 @@ cumtsn=50276345
 cumtsn=50276345
         recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
           SNDRCV(stream=0 ssn=0 tsn=50276422 flags=0x1 ppid=2114115591
+[...]
+
+###
+### FROM HOST (client):
+###
+root@fiveg-host-24-node4:~# sctp_test -H 10.65.94.1 -h  10.65.94.101 -p 9999 -s
 
 ```
 
+test with  sctp server deployment and metallb loadbalancer (replicas =3 + same IP as nginx)* 
 
+Slightly change the configuration with replicas=3
 
-
-
-
+```
+kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sctp-server
+  labels:
+    app: sctp-server
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: sctp-server
+  template:
+    metadata:
+      labels:
+        app: sctp-server
+    spec:
+      containers:
+      - name: sctp-server
+        image: ubuntu:20.04
+        command: ["/bin/bash", "-c", "apt-get update && apt-get install -y lksctp-tools && echo 'Starting SCTP server on port 9999' && sctp_test -H 0.0.0.0 -P 9999 -l"]
+        ports:
+        - containerPort: 9999
+          protocol: SCTP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sctp-server
+  annotations:
+    metallb.universe.tf/address-pool: mypool
+spec:
+  selector:
+    app: sctp-server
+  ports:
+  - protocol: SCTP
+    port: 9999
+    targetPort: 9999
+  type: LoadBalancer
+  loadBalancerIP: 10.65.94.100
+```
+This does not work: svc external address is in pending state (it is in use by the other LB for nginx).
+```
+ubuntu@test-metalbv2:~$ kubectl get pods -A
+NAMESPACE        NAME                                      READY   STATUS      RESTARTS   AGE
+[...]
+default          sctp-server-84f9bffb47-hfln5              1/1     Running     0          25m
+default          sctp-server-84f9bffb47-bnhsn              1/1     Running     0          5m1s
+default          sctp-server-84f9bffb47-vf68h              1/1     Running     0          5m1s
+ubuntu@test-metalbv2:~$ kubectl get svc
+NAME            TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)           AGE
+kubernetes      ClusterIP      10.43.0.1      <none>         443/TCP           17h
+nginx-service   LoadBalancer   10.43.67.168   10.65.94.100   80:30296/TCP      5h14m
+sctp-server     LoadBalancer   10.43.30.170   <pending>      9999:31519/SCTP   16s
+```
+This is ok after removing external address to a dedicated IP (.101)
+```
+ubuntu@test-metalbv2:~$ kubectl get svc
+NAME            TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)           AGE
+kubernetes      ClusterIP      10.43.0.1      <none>         443/TCP           17h
+nginx-service   LoadBalancer   10.43.67.168   10.65.94.100   80:30296/TCP      5h15m
+sctp-server     LoadBalancer   10.43.30.170   10.65.94.101   9999:31519/SCTP   46s
+ubuntu@test-metalbv2:~$ 
+```
