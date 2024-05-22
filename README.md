@@ -217,6 +217,13 @@ Commercial support is available at
 
 ### Under the hood. This all iptables (business as usual)
 ```
+###################### There is no new IP Address configured on the interface 
+ 
+ubuntu@test-metalbv2:~$ ip addr show | grep 10.65
+    inet 10.65.94.106/24 brd 10.65.94.255 scope global ens3
+ubuntu@test-metalbv2:~$
+
+###################### this is all iptables (is proxy-arp enforced ?)
 ubuntu@test-metalbv2:~$ sudo iptables-save 
 [...]
 -A KUBE-SERVICES -d 10.65.94.100/32 -p tcp -m comment --comment "default/nginx-service loadbalancer IP" -m tcp --dport 80 -j KUBE-EXT-V2OKYYMBY3REGZOG
