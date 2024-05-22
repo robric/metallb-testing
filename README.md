@@ -1,4 +1,4 @@
-# metallb-testing
+# metallb-testing for SCTP trafic
 playing around with metallb and testing with SCTP traffic 
 
 ## Lab Description and Installation:
