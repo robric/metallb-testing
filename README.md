@@ -238,9 +238,12 @@ ubuntu@test-metalbv2:~$ sudo iptables-save
 This worked! 
 
 
-### SCTP works
+## SCTP integration
 
-Install SCTP in *BOTH* VM and host. This will install kernel modules too.
+### Basic SCTP install and check
+
+Install lksctp-tools in *BOTH* VM and host. This will install kernel modules too and permits to test that environment is capable of processing SCTP.
+
 ```
 sudo apt install lksctp-tools -y && sudo apt install telnet -y
 ```
@@ -272,7 +275,36 @@ Connected to 10.65.94.106.
 Escape character is '^]'.
 ```
 
-### Deploy SCTP
+### test with  sctp server deployment and metallb loadbalancer
+
+```
+                  +-----------------------------------------------------+  
+                  |                                                     |  
+                  |  +----------------------------------------------+   |  
+                  |  |                                              |   |  
+                  |  | +------------+ +------------+ +------------+ |   | 
+                  |  | | sctp-server| | sctp-server| | sctp-server| |   |  
+                  |  | +------------+ +------------+ +------------+ |   | 
+                  |  |                 10.42/16                     |   |  
+                  |  +----------------------------------------------+   |  
+                  |                      deployment                     | 
+                  |                                                     |  
+                  | LOAD BALANCER for SCTP = 10.65.94.101 / PORT 9999   |  
+                  +-------------------+-   -+---------------------------+  
+                                      |     | NIC                          
+                                      |     |                              
+                                      |     | IP = 10.65.94.1/24           
+                                      +--|--+ 
+                                         |             
+                                         |                                    
+                      -------------------|----------------              
+                                            ^                           
+                                            |                               
+                                            |                                 
+                      from Host (client): sctp_test -H 10.65.94.1 -h  10.65.94.101 -p 9999 -s         
+``` 
+
+Configure a deployment with replica = 1 first. 
 
 ```
 kubectl apply -f - <<EOF
@@ -295,7 +327,7 @@ spec:
       containers:
       - name: sctp-server
         image: ubuntu:20.04
-        command: ["/bin/bash", "-c", "apt-get update && apt-get install -y lksctp-tools && echo 'Starting SCTP server on port 9999' && sctp_darn -H 0.0.0.0 -P 9999"]
+        command: ["/bin/bash", "-c", "apt-get update && apt-get install -y lksctp-tools && echo 'Starting SCTP server on port 9999' && sctp_test -H 0.0.0.0 -P 9999 -l"]
         ports:
         - containerPort: 9999
           protocol: SCTP
@@ -304,6 +336,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sctp-server
+  annotations:
+    metallb.universe.tf/address-pool: mypool
 spec:
   selector:
     app: sctp-server
@@ -312,8 +346,46 @@ spec:
     port: 9999
     targetPort: 9999
   type: LoadBalancer
+  loadBalancerIP: 10.65.94.101
 ```
 
+This just worked !
+
+```console
+###
+### FROM HOST (client):
+###
+root@fiveg-host-24-node4:~# sctp_test -H 10.65.94.1 -h  10.65.94.101 -p 9999 -s
+
+###
+### FROM Cluster VM:
+###
+ubuntu@test-metalbv2:~$ kubectl logs      sctp-server-84f9bffb47-hfln5    -f
+[....]
+Starting tests...
+        socket(SOCK_SEQPACKET, IPPROTO_SCTP)  ->  sk=3
+        bind(sk=3, [a:0.0.0.0,p:9999])  --  attempt 1/10
+        listen(sk=3,backlog=100)
+Server: Receiving packets.
+        recvmsg(sk=3) Notification: SCTP_ASSOC_CHANGE(COMMUNICATION_UP)
+                (assoc_change: state=0, error=0, instr=10 outstr=10)
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+          SNDRCV(stream=0 ssn=0 tsn=50276345 flags=0x1 ppid=641842057
+cumtsn=50276345
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+          SNDRCV(stream=0 ssn=0 tsn=50276419 flags=0x1 ppid=611453669
+cumtsn=50276345
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+          SNDRCV(stream=0 ssn=0 tsn=50276420 flags=0x1 ppid=493756153
+cumtsn=50276345
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+          SNDRCV(stream=0 ssn=0 tsn=50276421 flags=0x1 ppid=217965793
+cumtsn=50276345
+        recvmsg(sk=3) Data 1 bytes. First 1 bytes: <empty> text[0]=0
+          SNDRCV(stream=0 ssn=0 tsn=50276422 flags=0x1 ppid=2114115591
+
+```
 
 
 
