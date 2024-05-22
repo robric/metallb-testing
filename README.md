@@ -479,3 +479,10 @@ nginx-service   LoadBalancer   10.43.67.168   10.65.94.100   80:30296/TCP      5
 sctp-server     LoadBalancer   10.43.30.170   10.65.94.101   9999:31519/SCTP   46s
 ubuntu@test-metalbv2:~$ 
 ```
+Dataplane checks: 
+```
+ubuntu@test-metalbv2:~$ sudo iptables-save | grep  10.65.94.101
+-A KUBE-SERVICES -d 10.65.94.101/32 -p sctp -m comment --comment "default/sctp-server loadbalancer IP" -m sctp --dport 9999 -j KUBE-EXT-TPLYMHTSUEGZ256V
+ubuntu@test-metalbv2:~$ 
+```
+
