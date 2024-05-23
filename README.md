@@ -298,7 +298,10 @@ Client: Sending packets.(1/10)
 ```
 
 ### test with  sctp server deployment and metallb loadbalancer
-
+The below diagram describes what we want to do:
+* SCTP load balancing to a deployment with 3 pods (we start with replica=1) on port 9999
+* new LB address for SCTP 10.65.94.101
+  
 ```
                   +-----------------------------------------------------+  
                   |                                                     |  
@@ -370,6 +373,16 @@ spec:
   type: LoadBalancer
   loadBalancerIP: 10.65.94.101
 ```
+This looks good:
+```
+ubuntu@test-metalbv2:~$ kubectl  get svc
+NAME            TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)           AGE
+kubernetes      ClusterIP      10.43.0.1      <none>         443/TCP           35h
+nginx-service   LoadBalancer   10.43.67.168   10.65.94.100   80:30296/TCP      23h
+sctp-server     LoadBalancer   10.43.30.170   10.65.94.101   9999:31519/SCTP   18h
+ubuntu@test-metalbv2:~$ 
+```
+
 Start server from VM and client from host to test SCTP via the metallb Loadbalancer. This just worked !
 
 ```console
